@@ -7,8 +7,47 @@ const passport = require("passport");
 const localStrategy = require("passport-local").Strategy;
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
-
+const jwt = require("jsonwebtoken");
+const SECRET_KEY = require("../Constant");
 // app.use(bodyparser.urlencoded({extended:true}));
+
+const authenticationToken = (req, res, next) => {
+  try {
+
+const token=req.headers.authorization.split(" ")[1];
+// console.log(req.headers)
+// console.log(headerToken)
+
+// console.log(token,"<<<this is token")
+    if (token == null || token ==undefined) {
+      // return res.Status(401).send({success:false,msg:"token expire / invalid"}); 
+      next()
+    }
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+      if (err){ 
+// invalid token null
+        next()
+      };
+      req.user = user;
+      console.log(user)
+      next();
+    });
+  } catch (err) {
+    console.log(err);
+  }
+};
+
+const createToken = async (userId, userName) => {
+  const token = await jwt.sign({ id: userId, userName: userName }, SECRET_KEY, {
+    expiresIn: "1h",
+  });
+  console.log(token);
+  return token;
+
+  //  const userVerify=await jwt.verify(token,SECRET_KEY)
+  //  console.log(userVerify)
+};
+
 app.use(cookieParser("secret"));
 app.use(
   session({
@@ -46,7 +85,8 @@ app.post("/register", async (req, res) => {
         try {
           const user = await USERS.create({ userName, password: hashedvalue });
           await user.save();
-          res.status(200).send({ success: true });
+          const token = await createToken(user.id,user.userName)
+          res.status(200).send({ success: true,user,token });
         } catch (e) {
           console.log(e, "<<<<this is error");
           if (e.errors[0].type == "unique violation") {
@@ -55,7 +95,6 @@ app.post("/register", async (req, res) => {
               .send({ succces: false, msg: "Try with different user name" });
           }
         }
-        // console.log(hashedvalue,"<<<<<<<<")
       });
     });
   } catch (e) {
@@ -146,7 +185,7 @@ app.get("/fail", async (req, res, next) => {
   res.status(200).send({ success: false, msg: "Check User Name / Password" });
 });
 
-app.post("/login", async (req, res, next) => {
+app.post("/login", authenticationToken, async (req, res, next) => {
   console.log("it is here");
   passport.authenticate("local", {
     failureRedirect: "/fail",
@@ -169,13 +208,18 @@ app.get("/login/:userName/:password", async (req, res) => {
     } else {
       bcrypt.compare(password, user.dataValues.password, (err, match) => {
         if (err) {
+          console.log(error,"<<<<<<<<<<<<<")
           res.send({ success: false, msg: "Incorrect Password" });
         }
         console.log(match, "<<<<this is match");
         if (match) {
+          const token = createToken(
+            user.dataValues.id,
+            user.dataValues.userName
+          );
           res
             .status(200)
-            .send({ success: true, msg: "Successfully logged in" });
+            .send({ success: true, msg: "Successfully logged in",token });
         }
       }); // true
     }
